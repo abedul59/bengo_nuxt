@@ -154,8 +154,14 @@ const quickSearch = async (id) => {
 }
 
 // 頁面初次載入時抓取清單
+// 原本的 onMounted 區塊
 onMounted(() => {
   fetchSummary()
+
+  // [新增] 在背景呼叫 Server API 來記錄訪客，保持 Supabase 活躍
+  $fetch('/api/log-visit', { method: 'GET' })
+    .then(() => console.log('Visitor logged'))
+    .catch(err => console.error('Failed to log visitor', err))
 })
 
 // ---------------------------

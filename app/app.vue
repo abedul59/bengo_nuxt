@@ -128,9 +128,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { Line } from 'vue-chartjs'
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend)
+// 註冊 Filler 模組以啟用區塊填充效果
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 const supabase = useSupabaseClient()
 
@@ -172,6 +173,7 @@ const quickSearch = async (id) => {
 
 onMounted(() => {
   fetchSummary()
+  // 背景呼叫 API 紀錄訪客，保持 Supabase 活躍
   $fetch('/api/log-visit', { method: 'GET' }).catch(() => {})
 })
 
@@ -205,7 +207,7 @@ const fetchStockData = async () => {
 }
 
 // ---------------------------
-// 3. 觸發 Hugging Face 雲端抓取 (修正比對邏輯與超時設定)
+// 3. 觸發 Hugging Face 雲端抓取 (保持最新修正邏輯)
 // ---------------------------
 const triggerCloudScrape = async () => {
   if (!searchQuery.value) {
@@ -217,7 +219,7 @@ const triggerCloudScrape = async () => {
   showMessage(`正在通知雲端伺服器抓取 [${searchQuery.value}]，大約需要 30~60 秒，請稍候...`, 'info')
 
   try {
-    // 💡 關鍵修正：先查詢目前資料庫的狀態，拍照記下來！
+    // 💡 關鍵比對邏輯：先查詢目前資料庫的狀態，拍照記下來！
     await fetchStockData()
     const preScrapeDataStr = JSON.stringify(stockRecords.value)
 
@@ -240,7 +242,7 @@ const triggerCloudScrape = async () => {
       await fetchStockData() // 嘗試從 Supabase 查詢最新資料
       const currentDataStr = JSON.stringify(stockRecords.value)
       
-      // 💡 關鍵修正：如果現在的資料跟「剛才記下來的」不一樣，才代表有新資料寫入了！
+      // 💡 比對邏輯：如果現在的資料跟「剛才記下來的」不一樣，才代表有新資料寫入了！
       if (currentDataStr !== preScrapeDataStr) {
         clearInterval(checkInterval)
         isScraping.value = false
@@ -251,7 +253,6 @@ const triggerCloudScrape = async () => {
       else if (retries >= 30) { 
         clearInterval(checkInterval)
         isScraping.value = false
-        // 如果過了 90 秒資料都沒變，可能代表今天是假日，沒有新籌碼，或是已經是最新的了
         showMessage('等待結束。如果畫面沒有變化，代表目前資料庫已經是最新的狀態！', 'warning')
       }
     }, 3000)
@@ -264,7 +265,7 @@ const triggerCloudScrape = async () => {
 }
 
 // ---------------------------
-// 4. 手動上傳 JSON
+// 4. 手動上傳 JSON (保持最新修正邏輯)
 // ---------------------------
 const handleFileUpload = (event) => {
   selectedFile = event.target.files[0]
@@ -333,7 +334,7 @@ const uploadJsonData = async () => {
 }
 
 // ---------------------------
-// 5. 工具與圖表設定
+// 5. 工具與圖表設定 (新增大戶人數與多重Y軸)
 // ---------------------------
 const showMessage = (msg, type) => {
   message.value = msg
@@ -341,6 +342,7 @@ const showMessage = (msg, type) => {
   if (msg === '') messageType.value = 'info'
 }
 
+// 💡 核心修正：定義圖表資料集
 const chartData = computed(() => {
   // 顯示最近半年 (約 180 筆)
   const reversedData = [...stockRecords.value].reverse().slice(-180) 
@@ -350,36 +352,82 @@ const chartData = computed(() => {
       {
         label: '大戶持股比例 (%)',
         data: reversedData.map(d => d.major_pct),
-        borderColor: '#dc3545',
+        borderColor: '#dc3545', // 紅色
         backgroundColor: 'rgba(220, 53, 69, 0.1)',
-        yAxisID: 'y',
+        yAxisID: 'y_pct', // 對應 Y 軸 ID
         tension: 0.3,
-        fill: true
+        fill: true,
+        pointRadius: 2,
       },
       {
         label: '股價',
         data: reversedData.map(d => d.price),
-        borderColor: '#0d6efd',
-        backgroundColor: 'rgba(13, 110, 253, 0.1)',
-        yAxisID: 'y1',
-        borderDash: [5, 5],
-        tension: 0.3
+        borderColor: '#0d6efd', // 藍色
+        backgroundColor: 'transparent',
+        yAxisID: 'y_price', // 對應 Y 軸 ID
+        borderDash: [5, 5], // 虛線
+        tension: 0.3,
+        pointRadius: 2,
+      },
+      // 💡 [新增] 大戶人數折線
+      {
+        label: '大戶人數 (人)',
+        data: reversedData.map(d => d.major_people),
+        borderColor: '#198754', // 綠色
+        backgroundColor: 'transparent',
+        yAxisID: 'y_ppl', // 對應專屬的 Y 軸 ID
+        tension: 0.3,
+        pointRadius: 2,
       }
     ]
   }
 })
 
+// 💡 核心修正：定義多重 Y 軸設定
 const chartOptions = {
   responsive: true,
   interaction: { mode: 'index', intersect: false },
   scales: {
-    y: { type: 'linear', display: true, position: 'left', title: { display: true, text: '持股 %' } },
-    y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: '股價' } }
+    // 1. 左側第一軸 (紅色)：持股 %
+    y_pct: { 
+      type: 'linear', 
+      display: true, 
+      position: 'left', 
+      title: { display: true, text: '持股 %', color: '#dc3545', font: { weight: 'bold' } },
+      ticks: { color: '#dc3545' },
+      grid: { color: 'rgba(220, 53, 69, 0.1)' },
+      min: 0,
+      max: 100
+    },
+    // 2. 左側第二軸 (藍色)：股價
+    y_price: { 
+      type: 'linear', 
+      display: true, 
+      position: 'left', 
+      // 避免與紅軸重疊，將其稍微向右偏移或不顯示格線
+      stack: 'left_stack',
+      stackWeight: 1,
+      title: { display: true, text: '股價', color: '#0d6efd', font: { weight: 'bold' } },
+      ticks: { color: '#0d6efd' },
+      grid: { drawOnChartArea: false }, // 不在圖表區域畫格線，避免雜亂
+    },
+    // 3. [新增] 右側專屬軸 (綠色)：大戶人數
+    y_ppl: { 
+      type: 'linear', 
+      display: true, 
+      position: 'right', 
+      title: { display: true, text: '大戶人數 (人)', color: '#198754', font: { weight: 'bold' } },
+      ticks: { color: '#198754' },
+      grid: { drawOnChartArea: false }, // 不在圖表區域畫格線
+      // 可根據股票特性設定 min，例如對台積電來說，大戶人數很少低於 1000 人
+      // beginAtZero: true 
+    }
   }
 }
 </script>
 
 <style scoped>
 .rounded-4 { border-radius: 1rem !important; }
-.table-responsive { max-height: 500px; overflow-y: auto; }
+/* 優化表格捲動體驗 */
+.table-responsive { max-height: 500px; overflow-y: auto; scrollbar-width: thin; }
 </style>

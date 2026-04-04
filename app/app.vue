@@ -200,12 +200,12 @@ const fetchStockData = async () => {
     showMessage('', 'info')
   } else {
     stockRecords.value = []
-    showMessage(`資料庫中找不到代號 ${searchQuery.value} 的資料。您可以使用右側匯入或點擊「雲端抓取」。`, 'warning')
+    showMessage(`資料庫中找不到代號 ${searchQuery.value} 的資料。您可以點擊「⚡ 雲端抓取」自動獲取。`, 'warning')
   }
 }
 
 // ---------------------------
-// 3. 觸發 Hugging Face 雲端抓取
+// 3. 觸發 Hugging Face 雲端抓取 (已寫入真實網址)
 // ---------------------------
 const triggerCloudScrape = async () => {
   if (!searchQuery.value) {
@@ -217,11 +217,11 @@ const triggerCloudScrape = async () => {
   showMessage(`正在通知雲端伺服器抓取 [${searchQuery.value}]，大約需要 15~30 秒，請稍候...`, 'info')
 
   try {
-    // ⚠️ 這裡請換成您部署在 Hugging Face Space 的網址
+    // ⚠️ 寫入您真實的 Hugging Face API 網址
     const hfApiUrl = 'https://lawxstudents168-bengo-scraper-api.hf.space/api/start-scrape'
     
-    // 自動取得目前網站的網址作為 Callback (無論是在 localhost 還是 Vercel 都適用)
-    const myCallbackUrl = `https://bengo-nuxt.vercel.app/api/upload-stock`
+    // ⚠️ 寫入您真實的 Vercel 接收 API 網址
+    const myCallbackUrl = 'https://bengo-nuxt.vercel.app/api/upload-stock'
 
     await $fetch(hfApiUrl, {
       method: 'POST',
@@ -235,14 +235,14 @@ const triggerCloudScrape = async () => {
     let retries = 0
     const checkInterval = setInterval(async () => {
       retries++
-      await fetchStockData() // 嘗試查詢資料
+      await fetchStockData() // 嘗試從 Supabase 查詢最新資料
       
       if (stockRecords.value.length > 0) {
         clearInterval(checkInterval)
         isScraping.value = false
         showMessage(`🎉 雲端抓取並同步完成！`, 'success')
-        await fetchSummary() // 更新清單
-      } else if (retries >= 12) { // 最多等 36 秒 (12次 * 3秒)
+        await fetchSummary() // 更新已匯入清單
+      } else if (retries >= 15) { // 最多等 45 秒 (15次 * 3秒)
         clearInterval(checkInterval)
         isScraping.value = false
         showMessage('抓取請求已送出，但等待超時。如果稍後沒有出現資料，請確認雲端伺服器狀態。', 'warning')
@@ -292,6 +292,7 @@ const uploadJsonData = async () => {
           date: formattedDate,
           price: cleanFloat(row.price),
           total_shares: cleanInt(row.total_shares),
+          // 容錯處理：相容不同的 JSON 鍵名
           total_people: cleanInt(row.total_people || row.total_ppl),
           bengo_threshold: row.threshold_str || row.bengo_threshold || '',
           major_people: cleanInt(row.major_ppl || row.major_people),
@@ -335,6 +336,7 @@ const showMessage = (msg, type) => {
 }
 
 const chartData = computed(() => {
+  // 顯示最近半年 (約 180 筆)
   const reversedData = [...stockRecords.value].reverse().slice(-180) 
   return {
     labels: reversedData.map(d => d.date),

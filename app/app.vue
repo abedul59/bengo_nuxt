@@ -221,7 +221,7 @@ const triggerCloudScrape = async () => {
     const hfApiUrl = 'https://lawxstudents168-bengo-scraper-api.hf.space/api/start-scrape'
     
     // 自動取得目前網站的網址作為 Callback (無論是在 localhost 還是 Vercel 都適用)
-    const myCallbackUrl = `${window.location.origin}/api/upload-stock`
+    const myCallbackUrl = `https://bengo-nuxt.vercel.app/api/upload-stock`
 
     await $fetch(hfApiUrl, {
       method: 'POST',

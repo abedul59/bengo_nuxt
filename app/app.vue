@@ -172,7 +172,6 @@ const quickSearch = async (id) => {
 
 onMounted(() => {
   fetchSummary()
-  // 背景呼叫 API 紀錄訪客，保持 Supabase 活躍
   $fetch('/api/log-visit', { method: 'GET' }).catch(() => {})
 })
 
@@ -197,15 +196,16 @@ const fetchStockData = async () => {
     stockRecords.value = data
     stockNameDisplay.value = data[0].stock_name
     showList.value = false
-    showMessage('', 'info')
+    // 只有在非爬蟲狀態下才清除訊息
+    if (!isScraping.value) showMessage('', 'info')
   } else {
     stockRecords.value = []
-    showMessage(`資料庫中找不到代號 ${searchQuery.value} 的資料。您可以點擊「⚡ 雲端抓取」自動獲取。`, 'warning')
+    if (!isScraping.value) showMessage(`資料庫中找不到代號 ${searchQuery.value} 的資料。您可以點擊「⚡ 雲端抓取」自動獲取。`, 'warning')
   }
 }
 
 // ---------------------------
-// 3. 觸發 Hugging Face 雲端抓取 (已寫入真實網址)
+// 3. 觸發 Hugging Face 雲端抓取 (修正比對邏輯與超時設定)
 // ---------------------------
 const triggerCloudScrape = async () => {
   if (!searchQuery.value) {
@@ -214,13 +214,15 @@ const triggerCloudScrape = async () => {
   }
 
   isScraping.value = true
-  showMessage(`正在通知雲端伺服器抓取 [${searchQuery.value}]，大約需要 15~30 秒，請稍候...`, 'info')
+  showMessage(`正在通知雲端伺服器抓取 [${searchQuery.value}]，大約需要 30~60 秒，請稍候...`, 'info')
 
   try {
-    // ⚠️ 寫入您真實的 Hugging Face API 網址
+    // 💡 關鍵修正：先查詢目前資料庫的狀態，拍照記下來！
+    await fetchStockData()
+    const preScrapeDataStr = JSON.stringify(stockRecords.value)
+
+    // 真實的 API 網址
     const hfApiUrl = 'https://lawxstudents168-bengo-scraper-api.hf.space/api/start-scrape'
-    
-    // ⚠️ 寫入您真實的 Vercel 接收 API 網址
     const myCallbackUrl = 'https://bengo-nuxt.vercel.app/api/upload-stock'
 
     await $fetch(hfApiUrl, {
@@ -231,21 +233,26 @@ const triggerCloudScrape = async () => {
       }
     })
 
-    // 開始輪詢 (Polling) 檢查資料庫是否更新
+    // 開始輪詢 (Polling)
     let retries = 0
     const checkInterval = setInterval(async () => {
       retries++
       await fetchStockData() // 嘗試從 Supabase 查詢最新資料
+      const currentDataStr = JSON.stringify(stockRecords.value)
       
-      if (stockRecords.value.length > 0) {
+      // 💡 關鍵修正：如果現在的資料跟「剛才記下來的」不一樣，才代表有新資料寫入了！
+      if (currentDataStr !== preScrapeDataStr) {
         clearInterval(checkInterval)
         isScraping.value = false
         showMessage(`🎉 雲端抓取並同步完成！`, 'success')
         await fetchSummary() // 更新已匯入清單
-      } else if (retries >= 15) { // 最多等 45 秒 (15次 * 3秒)
+      } 
+      // 放寬等待時間到 90 秒 (30次 * 3秒)
+      else if (retries >= 30) { 
         clearInterval(checkInterval)
         isScraping.value = false
-        showMessage('抓取請求已送出，但等待超時。如果稍後沒有出現資料，請確認雲端伺服器狀態。', 'warning')
+        // 如果過了 90 秒資料都沒變，可能代表今天是假日，沒有新籌碼，或是已經是最新的了
+        showMessage('等待結束。如果畫面沒有變化，代表目前資料庫已經是最新的狀態！', 'warning')
       }
     }, 3000)
 
@@ -292,7 +299,6 @@ const uploadJsonData = async () => {
           date: formattedDate,
           price: cleanFloat(row.price),
           total_shares: cleanInt(row.total_shares),
-          // 容錯處理：相容不同的 JSON 鍵名
           total_people: cleanInt(row.total_people || row.total_ppl),
           bengo_threshold: row.threshold_str || row.bengo_threshold || '',
           major_people: cleanInt(row.major_ppl || row.major_people),

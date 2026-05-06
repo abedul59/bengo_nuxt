@@ -1,5 +1,6 @@
 <template>
   <div class="bg-light min-vh-100 pb-5">
+    <!-- 頂部導覽列 -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4 shadow-sm">
       <div class="container">
         <a class="navbar-brand fw-bold" href="/">🚀 Bengo Analytics Pro</a>
@@ -9,13 +10,16 @@
     <div class="container">
       <h2 class="text-center mb-4 fw-bold text-dark">籌碼大戶趨勢分析</h2>
 
+      <!-- 系統訊息提示區 -->
       <div v-if="message" :class="`alert alert-${messageType} shadow-sm`" role="alert">
         {{ message }}
       </div>
 
+      <!-- 控制面板 -->
       <div class="card p-4 mb-4 shadow-sm border-0 rounded-4">
         <div class="row g-4 align-items-center">
           
+          <!-- 左側：查詢與雲端抓取區塊 -->
           <div class="col-lg-7">
             <label class="form-label fw-bold text-secondary">🔍 查詢或雲端抓取</label>
             <div class="input-group shadow-sm">
@@ -29,6 +33,7 @@
               <button @click="fetchStockData" class="btn btn-primary px-4">
                 本地查詢
               </button>
+              <!-- 雲端抓取按鈕 -->
               <button @click="triggerCloudScrape" class="btn btn-warning px-4 fw-bold" :disabled="isScraping">
                 <span v-if="isScraping" class="spinner-border spinner-border-sm me-1"></span>
                 {{ isScraping ? '雲端抓取中...' : '⚡ 雲端抓取' }}
@@ -41,6 +46,7 @@
             </div>
           </div>
 
+          <!-- 右側：上傳 JSON 區塊 -->
           <div class="col-lg-5">
             <label class="form-label fw-bold text-secondary">📁 手動匯入本地 JSON</label>
             <div class="input-group shadow-sm">
@@ -55,6 +61,7 @@
         </div>
       </div>
 
+      <!-- 已匯入的股票清單區塊 -->
       <div v-if="showList" class="card p-4 mb-4 shadow-sm border-0 rounded-4">
         <h5 class="fw-bold mb-3 text-secondary">📂 目前資料庫中的股票清單</h5>
         <div class="table-responsive rounded-3 border">
@@ -84,15 +91,18 @@
         </div>
       </div>
 
+      <!-- 個股走勢圖表與表格區域 -->
       <div v-if="stockRecords.length > 0 && !showList">
         <h3 class="text-center mb-4 fw-bold text-primary">
           {{ searchQuery }} {{ stockNameDisplay }}
         </h3>
 
+        <!-- 走勢圖 -->
         <div class="card p-4 mb-4 shadow-sm border-0 rounded-4">
           <Line v-if="chartData.labels.length" :data="chartData" :options="chartOptions" />
         </div>
 
+        <!-- 歷史數據表格 -->
         <div class="card p-4 shadow-sm border-0 rounded-4">
           <h5 class="fw-bold mb-3 text-secondary">📊 詳細歷史數據</h5>
           <div class="table-responsive rounded-3 border">
@@ -130,7 +140,6 @@ import { ref, computed, onMounted } from 'vue'
 import { Line } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
 
-// 註冊 Filler 模組以啟用區塊填充效果
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 const supabase = useSupabaseClient()
@@ -150,6 +159,15 @@ let selectedFile = null
 // 清單狀態
 const importedStocks = ref([])
 const showList = ref(false)
+
+// ==========================================
+// 💡 Hugging Face 艦隊網址清單 (請確保 Space 名稱都是 bengo-scraper-api)
+// ==========================================
+const hfBaseUrls = [
+  'https://pyfbsdk59-bengo-scraper-api.hf.space',
+  'https://lawxstudents168-bengo-scraper-api.hf.space',
+  'https://igveri59-bengo-scraper-api.hf.space'
+]
 
 // ---------------------------
 // 1. 取得清單摘要
@@ -173,8 +191,15 @@ const quickSearch = async (id) => {
 
 onMounted(() => {
   fetchSummary()
-  // 背景呼叫 API 紀錄訪客，保持 Supabase 活躍
+  // 保持 Supabase 活躍
   $fetch('/api/log-visit', { method: 'GET' }).catch(() => {})
+  
+  // 💡 同時背景喚醒所有 Hugging Face 分身伺服器，防止睡著
+  hfBaseUrls.forEach(url => {
+    $fetch(url, { method: 'GET' })
+      .then(() => console.log(`已喚醒: ${url}`))
+      .catch(() => console.log(`喚醒請求已送出: ${url}`))
+  })
 })
 
 // ---------------------------
@@ -198,7 +223,6 @@ const fetchStockData = async () => {
     stockRecords.value = data
     stockNameDisplay.value = data[0].stock_name
     showList.value = false
-    // 只有在非爬蟲狀態下才清除訊息
     if (!isScraping.value) showMessage('', 'info')
   } else {
     stockRecords.value = []
@@ -207,7 +231,7 @@ const fetchStockData = async () => {
 }
 
 // ---------------------------
-// 3. 觸發 Hugging Face 雲端抓取 (保持最新修正邏輯)
+// 3. 觸發 Hugging Face 雲端抓取 (隨機派單)
 // ---------------------------
 const triggerCloudScrape = async () => {
   if (!searchQuery.value) {
@@ -216,17 +240,28 @@ const triggerCloudScrape = async () => {
   }
 
   isScraping.value = true
-  showMessage(`正在通知雲端伺服器抓取 [${searchQuery.value}]，大約需要 30~60 秒，請稍候...`, 'info')
-
+  
   try {
-    // 💡 關鍵比對邏輯：先查詢目前資料庫的狀態，拍照記下來！
+    // 💡 先查詢目前資料庫的狀態，拍照記下來
     await fetchStockData()
     const preScrapeDataStr = JSON.stringify(stockRecords.value)
 
-    // 真實的 API 網址
-    const hfApiUrl = 'https://lawxstudents168-bengo-scraper-api.hf.space/api/start-scrape'
+    // 💡 隨機挑選一個分身伺服器來執行任務
+    const randomIndex = Math.floor(Math.random() * hfBaseUrls.length)
+    const selectedHfBaseUrl = hfBaseUrls[randomIndex]
+    
+    // 組合出最終的 API 網址
+    const hfApiUrl = `${selectedHfBaseUrl}/api/start-scrape`
+    console.log(`🎯 本次抽中派單的伺服器: ${hfApiUrl}`)
+    
+    // 顯示給使用者看這次是用哪一台機器
+    const machineName = selectedHfBaseUrl.split('//')[1].split('-bengo')[0]
+    showMessage(`正在通知雲端伺服器 [${machineName}] 抓取 [${searchQuery.value}]，大約需要 30~60 秒，請稍候...`, 'info')
+
+    // 您的 Vercel 真實網址
     const myCallbackUrl = 'https://bengo-nuxt.vercel.app/api/upload-stock'
 
+    // 發送請求
     await $fetch(hfApiUrl, {
       method: 'POST',
       body: {
@@ -235,21 +270,21 @@ const triggerCloudScrape = async () => {
       }
     })
 
-    // 開始輪詢 (Polling)
+    // 開始輪詢 (Polling) 檢查是否有新資料寫入
     let retries = 0
     const checkInterval = setInterval(async () => {
       retries++
-      await fetchStockData() // 嘗試從 Supabase 查詢最新資料
+      await fetchStockData() 
       const currentDataStr = JSON.stringify(stockRecords.value)
       
-      // 💡 比對邏輯：如果現在的資料跟「剛才記下來的」不一樣，才代表有新資料寫入了！
+      // 如果現在的資料跟剛才記下來的不一樣，代表有新資料寫入了！
       if (currentDataStr !== preScrapeDataStr) {
         clearInterval(checkInterval)
         isScraping.value = false
-        showMessage(`🎉 雲端抓取並同步完成！`, 'success')
-        await fetchSummary() // 更新已匯入清單
+        showMessage(`🎉 雲端抓取並同步完成！(由 ${machineName} 執行)`, 'success')
+        await fetchSummary() 
       } 
-      // 放寬等待時間到 90 秒 (30次 * 3秒)
+      // 90 秒等不到資料
       else if (retries >= 30) { 
         clearInterval(checkInterval)
         isScraping.value = false
@@ -259,13 +294,13 @@ const triggerCloudScrape = async () => {
 
   } catch (err) {
     console.error(err)
-    showMessage('無法連線到雲端抓取伺服器，請確認網址是否正確。', 'danger')
+    showMessage('無法連線到雲端抓取伺服器，請再試一次或確認網址設定。', 'danger')
     isScraping.value = false
   }
 }
 
 // ---------------------------
-// 4. 手動上傳 JSON (保持最新修正邏輯)
+// 4. 手動上傳 JSON
 // ---------------------------
 const handleFileUpload = (event) => {
   selectedFile = event.target.files[0]
@@ -334,7 +369,7 @@ const uploadJsonData = async () => {
 }
 
 // ---------------------------
-// 5. 工具與圖表設定 (新增大戶人數與多重Y軸)
+// 5. 工具與多重 Y 軸圖表設定
 // ---------------------------
 const showMessage = (msg, type) => {
   message.value = msg
@@ -342,7 +377,6 @@ const showMessage = (msg, type) => {
   if (msg === '') messageType.value = 'info'
 }
 
-// 💡 核心修正：定義圖表資料集
 const chartData = computed(() => {
   // 顯示最近半年 (約 180 筆)
   const reversedData = [...stockRecords.value].reverse().slice(-180) 
@@ -354,7 +388,7 @@ const chartData = computed(() => {
         data: reversedData.map(d => d.major_pct),
         borderColor: '#dc3545', // 紅色
         backgroundColor: 'rgba(220, 53, 69, 0.1)',
-        yAxisID: 'y_pct', // 對應 Y 軸 ID
+        yAxisID: 'y_pct',
         tension: 0.3,
         fill: true,
         pointRadius: 2,
@@ -364,18 +398,17 @@ const chartData = computed(() => {
         data: reversedData.map(d => d.price),
         borderColor: '#0d6efd', // 藍色
         backgroundColor: 'transparent',
-        yAxisID: 'y_price', // 對應 Y 軸 ID
-        borderDash: [5, 5], // 虛線
+        yAxisID: 'y_price',
+        borderDash: [5, 5],
         tension: 0.3,
         pointRadius: 2,
       },
-      // 💡 [新增] 大戶人數折線
       {
         label: '大戶人數 (人)',
         data: reversedData.map(d => d.major_people),
         borderColor: '#198754', // 綠色
         backgroundColor: 'transparent',
-        yAxisID: 'y_ppl', // 對應專屬的 Y 軸 ID
+        yAxisID: 'y_ppl',
         tension: 0.3,
         pointRadius: 2,
       }
@@ -383,12 +416,10 @@ const chartData = computed(() => {
   }
 })
 
-// 💡 核心修正：定義多重 Y 軸設定
 const chartOptions = {
   responsive: true,
   interaction: { mode: 'index', intersect: false },
   scales: {
-    // 1. 左側第一軸 (紅色)：持股 %
     y_pct: { 
       type: 'linear', 
       display: true, 
@@ -399,28 +430,23 @@ const chartOptions = {
       min: 0,
       max: 100
     },
-    // 2. 左側第二軸 (藍色)：股價
     y_price: { 
       type: 'linear', 
       display: true, 
       position: 'left', 
-      // 避免與紅軸重疊，將其稍微向右偏移或不顯示格線
       stack: 'left_stack',
       stackWeight: 1,
       title: { display: true, text: '股價', color: '#0d6efd', font: { weight: 'bold' } },
       ticks: { color: '#0d6efd' },
-      grid: { drawOnChartArea: false }, // 不在圖表區域畫格線，避免雜亂
+      grid: { drawOnChartArea: false }, 
     },
-    // 3. [新增] 右側專屬軸 (綠色)：大戶人數
     y_ppl: { 
       type: 'linear', 
       display: true, 
       position: 'right', 
       title: { display: true, text: '大戶人數 (人)', color: '#198754', font: { weight: 'bold' } },
       ticks: { color: '#198754' },
-      grid: { drawOnChartArea: false }, // 不在圖表區域畫格線
-      // 可根據股票特性設定 min，例如對台積電來說，大戶人數很少低於 1000 人
-      // beginAtZero: true 
+      grid: { drawOnChartArea: false }, 
     }
   }
 }
@@ -428,6 +454,5 @@ const chartOptions = {
 
 <style scoped>
 .rounded-4 { border-radius: 1rem !important; }
-/* 優化表格捲動體驗 */
 .table-responsive { max-height: 500px; overflow-y: auto; scrollbar-width: thin; }
 </style>
